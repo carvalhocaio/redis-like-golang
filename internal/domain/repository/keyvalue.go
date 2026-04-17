@@ -15,3 +15,5 @@ type KeyValueRepository interface {
 	StartCleanup(intervalMs int64)
 	StopCleanup()
 }
+
+type PersistenceRepository interface{}
