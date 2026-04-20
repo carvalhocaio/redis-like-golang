@@ -2,22 +2,27 @@ package protocol
 
 import (
 	"fmt"
-	"redis-like-golang/internal/domain/command"
 	"strings"
+
+	"redis-like-golang/internal/domain/command"
 )
 
+// Command represents a parsed command
 type Command struct {
 	Type command.Type
 	Args []string
 }
 
+// Parser handles command parsing and response formatting
 type Parser struct{}
 
+// NewParser creates a new protocol parser
 func NewParser() *Parser {
 	return &Parser{}
 }
 
-func (p *Parser) ParserCommand(line string) (*Command, error) {
+// ParseCommand parses a command line into command and arguments
+func (p *Parser) ParseCommand(line string) (*Command, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return nil, fmt.Errorf("empty command")
@@ -45,28 +50,38 @@ func (p *Parser) ParserCommand(line string) (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) FormatResponse(result any) string {
+// FormatResponse formats a result into a response string
+func (p *Parser) FormatResponse(result interface{}) string {
 	switch v := result.(type) {
 	case string:
 		return v
-	case int, int64:
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
 		return fmt.Sprintf("%d", v)
 	case bool:
 		if v {
-			return p.FormatOK()
+			return "OK"
 		}
 		return "ERR operation failed"
 	case error:
-		return p.FormatError(v.Error())
+		return fmt.Sprintf("ERR %s", v.Error())
 	default:
 		return fmt.Sprintf("%v", result)
 	}
 }
 
-func (p *Parser) FormatOK() string { return "OK" }
-
-func (p *Parser) FormatError(msg string) string {
-	return fmt.Sprintf("ERR: %s", msg)
+// FormatOK returns "OK" response
+func (p *Parser) FormatOK() string {
+	return "OK"
 }
 
-func (p *Parser) FormatNil() string { return "nil" }
+// FormatError returns an error response
+func (p *Parser) FormatError(msg string) string {
+	return fmt.Sprintf("ERR %s", msg)
+}
+
+// FormatNil returns "nil" response
+func (p *Parser) FormatNil() string {
+	return "nil"
+}

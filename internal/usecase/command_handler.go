@@ -3,13 +3,16 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"log"
+	"strconv"
+	"strings"
+
 	"redis-like-golang/internal/adapter/protocol"
 	"redis-like-golang/internal/domain/command"
 	"redis-like-golang/internal/domain/repository"
-	"strconv"
-	"strings"
 )
 
+// CommandHandler handles command execution
 type CommandHandler struct {
 	store   repository.KeyValueRepository
 	persist repository.PersistenceRepository
@@ -17,11 +20,13 @@ type CommandHandler struct {
 	stats   *Stats
 }
 
+// NewCommandHandler creates a new command handler
 func NewCommandHandler(
-	parser *protocol.Parser,
 	store repository.KeyValueRepository,
 	persist repository.PersistenceRepository,
-	stats *Stats) *CommandHandler {
+	stats *Stats,
+	parser *protocol.Parser,
+) *CommandHandler {
 	return &CommandHandler{
 		store:   store,
 		persist: persist,
@@ -30,8 +35,10 @@ func NewCommandHandler(
 	}
 }
 
+// ExecuteCommand executes a command and returns the response
 func (h *CommandHandler) ExecuteCommand(ctx context.Context, cmd *protocol.Command) string {
-	h.stats.IncrementalCommands()
+	// Increment command counter
+	h.stats.IncrementCommands()
 
 	switch cmd.Type {
 	case command.SET:
@@ -48,17 +55,19 @@ func (h *CommandHandler) ExecuteCommand(ctx context.Context, cmd *protocol.Comma
 		return h.handlePersist(ctx, cmd.Args)
 	case command.KEYS:
 		return h.handleKeys(ctx, cmd.Args)
+	case command.EXISTS:
+		return h.handleExists(ctx, cmd.Args)
 	case command.PING:
 		return h.handlePing(ctx, cmd.Args)
 	case command.INFO:
 		return h.handleInfo(ctx, cmd.Args)
 	default:
-		return h.parser.FormatError(fmt.Sprintf("unknown command type: %s", cmd.Type))
+		return h.parser.FormatError(fmt.Sprintf("unknown command: %s", cmd.Type))
 	}
 }
 
 func (h *CommandHandler) handleSet(ctx context.Context, args []string) string {
-	if len(args) != 2 {
+	if len(args) < 2 {
 		return h.parser.FormatError("SET requires at least 2 arguments")
 	}
 
@@ -67,47 +76,114 @@ func (h *CommandHandler) handleSet(ctx context.Context, args []string) string {
 	h.store.Set(ctx, key, value)
 
 	if h.persist != nil {
-		h.persist.Append(ctx, command.SET.String(), args)
+		if err := h.persist.Append(ctx, command.SET.String(), args); err != nil {
+			log.Printf("error persisting command: %v", err)
+		}
 	}
 
 	return h.parser.FormatOK()
 }
 
 func (h *CommandHandler) handleGet(ctx context.Context, args []string) string {
-	if len(args) != 1 {
-		return h.parser.FormatError("GET requires at least 1 arguments")
+	if len(args) < 1 {
+		return h.parser.FormatError("GET requires 1 argument")
 	}
 
 	value, found := h.store.Get(ctx, args[0])
 	if found {
 		return value
 	}
-
 	return h.parser.FormatNil()
 }
 
 func (h *CommandHandler) handleDel(ctx context.Context, args []string) string {
-	if len(args) != 1 {
-		return h.parser.FormatError("DEL requires at least 1 arguments")
+	if len(args) < 1 {
+		return h.parser.FormatError("DEL requires at least 1 argument")
 	}
 
 	count := 0
-	for _, keys := range args {
-		count += h.store.Del(ctx, keys)
+	for _, key := range args {
+		count += h.store.Del(ctx, key)
 	}
 
 	if h.persist != nil && count > 0 {
-		for _, key := range args {
-			h.persist.Append(ctx, command.DEL.String(), []string{key})
+		if err := h.persist.Append(ctx, command.DEL.String(), args); err != nil {
+			log.Printf("error persisting DEL command: %v", err)
 		}
 	}
 
 	return h.parser.FormatResponse(count)
 }
 
+func (h *CommandHandler) handleExpire(ctx context.Context, args []string) string {
+	if len(args) < 2 {
+		return h.parser.FormatError("EXPIRE requires 2 arguments")
+	}
+
+	key := args[0]
+	seconds, err := strconv.Atoi(args[1])
+	if err != nil {
+		return h.parser.FormatError("invalid seconds value")
+	}
+
+	success := h.store.Expire(ctx, key, seconds)
+	if success {
+		if h.persist != nil {
+			if err := h.persist.Append(ctx, command.EXPIRE.String(), []string{key}); err != nil {
+				log.Printf("error persisting EXPIRE command for key %q: %v", key, err)
+			}
+		}
+		return h.parser.FormatOK()
+	}
+
+	return h.parser.FormatResponse(0)
+}
+
+func (h *CommandHandler) handleTTL(ctx context.Context, args []string) string {
+	if len(args) < 1 {
+		return h.parser.FormatError("TTL requires 1 argument")
+	}
+
+	ttl := h.store.TTL(ctx, args[0])
+	return h.parser.FormatResponse(ttl)
+}
+
+func (h *CommandHandler) handlePersist(ctx context.Context, args []string) string {
+	if len(args) < 1 {
+		return h.parser.FormatError("PERSIST requires 1 argument")
+	}
+
+	success := h.store.Persist(ctx, args[0])
+	if success {
+		if h.persist != nil {
+			if err := h.persist.Append(ctx, command.PERSIST.String(), args); err != nil {
+				log.Printf("error persisting PERSIST command for key %q: %v", args[0], err)
+			}
+		}
+		return h.parser.FormatOK()
+	}
+
+	return h.parser.FormatResponse(0)
+}
+
+func (h *CommandHandler) handleKeys(ctx context.Context, args []string) string {
+	pattern := "*"
+	if len(args) > 0 {
+		pattern = args[0]
+	}
+
+	keys := h.store.Keys(ctx, pattern)
+
+	// Format as space-separated list
+	if len(keys) == 0 {
+		return ""
+	}
+	return strings.Join(keys, " ")
+}
+
 func (h *CommandHandler) handleExists(ctx context.Context, args []string) string {
-	if len(args) != 1 {
-		return h.parser.FormatError("EXISTS requires at least 1 arguments")
+	if len(args) < 1 {
+		return h.parser.FormatError("EXISTS requires at least 1 argument")
 	}
 
 	count := 0
@@ -120,68 +196,6 @@ func (h *CommandHandler) handleExists(ctx context.Context, args []string) string
 	return h.parser.FormatResponse(count)
 }
 
-func (h *CommandHandler) handleExpire(ctx context.Context, args []string) string {
-	if len(args) != 1 {
-		return h.parser.FormatError("EXPIRE requires at least 1 arguments")
-	}
-
-	key := args[0]
-	seconds, err := strconv.Atoi(args[1])
-	if err != nil {
-		return h.parser.FormatError("invalid seconds value")
-	}
-
-	success := h.store.Expire(ctx, key, seconds)
-	if success {
-		if h.persist != nil {
-			h.persist.Append(ctx, command.EXPIRE.String(), []string{key})
-		}
-		return h.parser.FormatOK()
-	}
-
-	return h.parser.FormatResponse(success)
-}
-
-func (h *CommandHandler) handlePersist(ctx context.Context, args []string) string {
-	if len(args) != 1 {
-		return h.parser.FormatError("PERSIST requires at least 1 arguments")
-	}
-
-	success := h.store.Persist(ctx, args[0])
-	if success {
-		if h.persist != nil {
-			h.persist.Append(ctx, command.PERSIST.String(), []string{args[0]})
-		}
-		return h.parser.FormatOK()
-	}
-
-	return h.parser.FormatResponse(success)
-}
-
-func (h *CommandHandler) handleTTL(ctx context.Context, args []string) string {
-	if len(args) != 1 {
-		return h.parser.FormatError("TTL requires at least 1 arguments")
-	}
-
-	ttl := h.store.TTL(ctx, args[0])
-	return h.parser.FormatResponse(ttl)
-}
-
-func (h *CommandHandler) handleKeys(ctx context.Context, args []string) string {
-	pattern := "*"
-	if len(args) > 0 {
-		pattern = args[0]
-	}
-
-	keys := h.store.Keys(ctx, pattern)
-
-	if len(keys) == 0 {
-		return ""
-	}
-
-	return strings.Join(keys, " ")
-}
-
 func (h *CommandHandler) handlePing(ctx context.Context, args []string) string {
 	message := "PONG"
 	if len(args) > 0 {
@@ -191,5 +205,19 @@ func (h *CommandHandler) handlePing(ctx context.Context, args []string) string {
 }
 
 func (h *CommandHandler) handleInfo(ctx context.Context, args []string) string {
-	return h.stats.GetInfo(ctx)
+	section := ""
+	if len(args) > 0 {
+		section = strings.ToUpper(args[0])
+	}
+
+	info := h.stats.GetInfo(ctx)
+
+	// If section is specified, filter output (for simplicity, return all for now)
+	// In a real implementation, you'd parse and filter by section
+	if section != "" && section != "ALL" && section != "DEFAULT" {
+		// For now, return all info regardless of section
+		// This could be enhanced to filter by section (server, clients, stats, keyspace)
+	}
+
+	return info
 }

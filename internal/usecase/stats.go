@@ -3,11 +3,13 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"redis-like-golang/internal/domain/repository"
 	"sync/atomic"
 	"time"
+
+	"redis-like-golang/internal/domain/repository"
 )
 
+// Stats holds server statistics
 type Stats struct {
 	startTime        time.Time
 	totalCommands    int64
@@ -15,6 +17,7 @@ type Stats struct {
 	keyspace         repository.KeyValueRepository
 }
 
+// NewStats creates a new stats instance
 func NewStats(keyspace repository.KeyValueRepository) *Stats {
 	return &Stats{
 		startTime: time.Now(),
@@ -22,14 +25,17 @@ func NewStats(keyspace repository.KeyValueRepository) *Stats {
 	}
 }
 
-func (s *Stats) IncrementalCommands() {
+// IncrementCommands increments the command counter
+func (s *Stats) IncrementCommands() {
 	atomic.AddInt64(&s.totalCommands, 1)
 }
 
-func (s *Stats) IncrementalConnections() {
+// IncrementConnections increments the connection counter
+func (s *Stats) IncrementConnections() {
 	atomic.AddInt64(&s.totalConnections, 1)
 }
 
+// GetInfo returns formatted INFO string
 func (s *Stats) GetInfo(ctx context.Context) string {
 	uptime := time.Since(s.startTime).Seconds()
 	commands := atomic.LoadInt64(&s.totalCommands)
@@ -49,7 +55,7 @@ total_connections_received:%d
 # Stats
 total_commands_processed:%d
 keyspace_hits:0
-keyspace_misses:9
+keyspace_misses:0
 
 # Keyspace
 db0:keys=%d

@@ -25,7 +25,7 @@ func InitializeContainer(opt persistence.AOFProviderOption) (*Container, func(),
 	}
 	parser := protocol.NewParser()
 	stats := usecase.NewStats(keyValueRepository)
-	commandHandler := usecase.NewCommandHandler(parser, keyValueRepository, persistenceRepository, stats)
+	commandHandler := usecase.NewCommandHandler(keyValueRepository, persistenceRepository, stats, parser)
 	tcpHandler := handler.NewTCPHandler(commandHandler, parser)
 	container := NewContainer(keyValueRepository, persistenceRepository, parser, commandHandler, tcpHandler)
 	return container, func() {

@@ -2,6 +2,7 @@ package repository
 
 import "context"
 
+// KeyValueRepository defines the interface for key-value operations
 type KeyValueRepository interface {
 	Set(ctx context.Context, key, value string)
 	Get(ctx context.Context, key string) (string, bool)
@@ -14,11 +15,4 @@ type KeyValueRepository interface {
 	Size(ctx context.Context) int
 	StartCleanup(intervalMs int64)
 	StopCleanup()
-}
-
-// PersistenceRepository defines the interface for persistence operations
-type PersistenceRepository interface {
-	Append(ctx context.Context, command string, args []string) error
-	Replay(ctx context.Context, store KeyValueRepository) error
-	Close() error
 }

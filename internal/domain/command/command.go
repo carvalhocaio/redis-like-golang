@@ -17,10 +17,12 @@ const (
 	INFO   Type = "INFO"
 )
 
+// String returns the string representation of the command type
 func (t Type) String() string {
 	return string(t)
 }
 
+// IsValid checks if the command type is valid
 func (t Type) IsValid() bool {
 	switch t {
 	case SET, GET, DEL, EXPIRE, TTL, PERSIST, QUIT, KEYS, EXISTS, PING, INFO:
@@ -30,7 +32,8 @@ func (t Type) IsValid() bool {
 	}
 }
 
-func (t Type) isWriteCommand() bool {
+// IsWriteCommand checks if the command modifies data
+func (t Type) IsWriteCommand() bool {
 	switch t {
 	case SET, DEL, EXPIRE, PERSIST:
 		return true

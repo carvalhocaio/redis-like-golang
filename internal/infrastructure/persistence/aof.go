@@ -62,11 +62,15 @@ func (a *AOF) Replay(ctx context.Context, store repository.KeyValueRepository) e
 	file, err := os.Open(a.filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // File doesn't exist, nothing to replay
+			return nil
 		}
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

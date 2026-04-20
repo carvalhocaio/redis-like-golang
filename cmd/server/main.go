@@ -7,10 +7,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"redis-like-golang/internal/container"
-	"redis-like-golang/internal/infrastructure/persistence"
 	"syscall"
 	"time"
+
+	"redis-like-golang/internal/container"
+	"redis-like-golang/internal/infrastructure/persistence"
 )
 
 var (
@@ -21,6 +22,7 @@ var (
 func main() {
 	flag.Parse()
 
+	// Create dependency injection container using Wire
 	opt := persistence.AOFProviderOption{
 		EnableAOF: *enableAOF,
 		FilePath:  "data.aof",
@@ -33,9 +35,10 @@ func main() {
 		if cleanup != nil {
 			cleanup()
 		}
-		ctn.Close()
+		_ = ctn.Close()
 	}()
 
+	// Replay AOF if enabled
 	if *enableAOF && ctn.Persistence != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -43,36 +46,38 @@ func main() {
 		if err := ctn.Persistence.Replay(ctx, ctn.Store); err != nil {
 			log.Printf("Warning: failed to replay AOF: %v", err)
 		} else {
-			log.Printf("Replayed AOF")
+			log.Println("AOF replay completed")
 		}
 	}
 
-	ctn.Store.StartCleanup(1000)
+	// Start cleanup goroutine
+	ctn.Store.StartCleanup(1000) // 1000ms = 1 second
 	defer ctn.Store.StopCleanup()
 
+	// Start TCP server
 	listener, err := net.Listen("tcp", ":"+*port)
 	if err != nil {
-		log.Fatalf("Error listening on port %v: %v", *port, err)
+		log.Fatalf("Failed to listen on port %s: %v", *port, err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
-	log.Printf("Server listening on port %v (AOF: %v)", *port, *enableAOF)
+	log.Printf("Server listening on port %s (AOF: %v)", *port, *enableAOF)
 
+	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		<-sigChan
-		log.Printf("Caught interrupt, shutting down...")
-
-		time.Sleep(5 * time.Second)
-		listener.Close()
+		log.Println("Shutting down...")
+		_ = listener.Close()
 	}()
 
+	// Accept connections
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Error accepting connection: %v", err)
+			log.Printf("Failed to accept connection: %v", err)
 			break
 		}
 
