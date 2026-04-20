@@ -63,7 +63,7 @@ func (p *Parser) FormatResponse(result any) string {
 	}
 }
 
-func (p *Parser) FormatOK() string { return "Ok" }
+func (p *Parser) FormatOK() string { return "OK" }
 
 func (p *Parser) FormatError(msg string) string {
 	return fmt.Sprintf("ERR: %s", msg)

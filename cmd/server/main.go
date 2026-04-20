@@ -1,4 +1,4 @@
-package server
+package main
 
 import (
 	"context"
@@ -74,8 +74,8 @@ func main() {
 		if err != nil {
 			log.Printf("Error accepting connection: %v", err)
 			break
-
-			go ctn.TCPHandler.HandleConnection(conn)
 		}
+
+		go ctn.TCPHandler.HandleConnection(conn)
 	}
 }
