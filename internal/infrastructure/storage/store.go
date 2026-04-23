@@ -84,7 +84,8 @@ func (s *Store) Expire(ctx context.Context, key string, seconds int) bool {
 		return false
 	}
 
-	item.ExpiresAt = new(time.Now().Unix() + int64(seconds))
+	expiresAt := time.Now().Unix() + int64(seconds)
+	item.ExpiresAt = &expiresAt
 	return true
 }
 
